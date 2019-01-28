@@ -1,17 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import gql from 'graphql-tag';
-import { Query, Mutation } from 'react-apollo';
+import { Query, Mutation, Subscription } from 'react-apollo';
 
 const LIST_TODOS_QUERY = gql`
   query ListTodos {
     listTodos {
       id
       name
+      description
+      notes {
+        id
+        text
+      }
     }
   }
 `;
 
-function TodoList() {
+const GET_TODO_QUERY = gql`
+  query GetTodo($todoId: ID!) {
+    getTodo(id: $todoId) {
+      id
+      name
+      description
+      notes {
+        id
+        text
+      }
+    }
+  }
+`;
+
+function TodoList({ setSelected }) {
   return (
     <Query
       query={LIST_TODOS_QUERY}
@@ -19,18 +38,49 @@ function TodoList() {
     >
       {({ loading, error, data }) => {
         if (loading) return <p>Loading...</p>;
-        if (error) return <p>Error!</p>;
+        if (error) return <p>Error! {error.message}</p>;
+        if (!data) return <p>No todos!</p>;
         return (
           <ul>
             {data.listTodos.map((todo) => (
               <li key={todo.id}>
                 {todo.name} - {todo.id < 0 ? 'optimistic' : 'real'}
+                &emsp;
+                <button onClick={() => setSelected(todo.id)}>Details</button>
               </li>
             ))}
           </ul>
         );
       }}
     </Query>
+  );
+}
+
+function TodoNew() {
+  return (
+    <Subscription
+      subscription={gql`
+        subscription TodoAdded {
+          todoAdded {
+            id
+            name
+            description
+          }
+        }
+      `}
+    >
+      {({ loading, error, data }) => {
+        if (loading) return null;
+        if (error) return <p>Error! {error.message}</p>;
+        return (
+          <>
+            <br />
+            {data && data.todoAdded && <h4>New todo: {data.todoAdded.name}</h4>}
+            <br />
+          </>
+        );
+      }}
+    </Subscription>
   );
 }
 
@@ -43,6 +93,8 @@ function TodoAdd() {
           addTodo: {
             name: e.target.value,
             id: Math.round(Math.random() * -1000000),
+            description: '',
+            notes: [],
             __typename: 'Todo'
           }
         },
@@ -56,7 +108,6 @@ function TodoAdd() {
             data: cachedTodos
           });
         }
-        //refetchQueries: ['ListTodos']
       });
       e.target.value = '';
     }
@@ -69,6 +120,11 @@ function TodoAdd() {
           addTodo(input: $input) {
             id
             name
+            description
+            notes {
+              id
+              text
+            }
           }
         }
       `}
@@ -84,12 +140,135 @@ function TodoAdd() {
   );
 }
 
+function TodoDetail({ selected }) {
+  return (
+    <Query
+      query={GET_TODO_QUERY}
+      variables={{ todoId: selected }}
+      fetchPolicy={'cache-and-network'}
+    >
+      {({ loading, error, data, subscribeToMore }) => {
+        if (loading) return <p>Loading...</p>;
+        if (error) return <p>Error! {error.message}</p>;
+
+        const subscribeToNewNotes = () => {
+          const unsubscribe = subscribeToMore({
+            document: gql`
+              subscription onNoteAdded($todoId: ID!) {
+                noteAdded(todoId: $todoId) {
+                  id
+                  text
+                }
+              }
+            `,
+            variables: { todoId: selected },
+            updateQuery: (prev, { subscriptionData }) => {
+              if (!subscriptionData.data) return prev;
+              const newNote = subscriptionData.data.noteAdded;
+              const newData = {
+                ...prev,
+                getTodo: {
+                  ...prev.getTodo,
+                  notes: [...prev.getTodo.notes, newNote]
+                }
+              };
+              return newData;
+            }
+          });
+          return unsubscribe;
+        };
+
+        return (
+          <TodoDetailView data={data} subscribeToMore={subscribeToNewNotes} />
+        );
+      }}
+    </Query>
+  );
+}
+
+function TodoDetailView({ data, subscribeToMore }) {
+  useEffect(() => {
+    const unsubscribe = subscribeToMore();
+    return () => unsubscribe();
+  });
+
+  return (
+    <>
+      <h3>Details</h3>
+      <h4>{data.getTodo.name}</h4>
+      Notes
+      <br />
+      {data.getTodo.notes &&
+        data.getTodo.notes.map((note) => <li key={note.id}>{note.text}</li>)}
+    </>
+  );
+}
+
+function NoteAdd({ selected }) {
+  const handleKeyPress = (e, addNote) => {
+    if (e.keyCode === 13) {
+      addNote({
+        variables: { input: { id: selected, text: e.target.value } },
+        optimisticResponse: {
+          addNote: {
+            text: e.target.value,
+            id: Math.round(Math.random() * -1000000),
+            __typename: 'Note'
+          }
+        },
+        update: (cache, { data: { addNote } }) => {
+          const cachedTodo = cache.readQuery({
+            query: GET_TODO_QUERY,
+            variables: { todoId: selected }
+          });
+          if (
+            !cachedTodo.getTodo.notes.find((note) => note.id === addNote.id)
+          ) {
+            cachedTodo.getTodo.notes.push(addNote);
+            cache.writeQuery({
+              query: GET_TODO_QUERY,
+              variables: { todoId: selected },
+              data: cachedTodo
+            });
+          }
+        }
+      });
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <Mutation
+      mutation={gql`
+        mutation AddNote($input: NoteInput) {
+          addNote(input: $input) {
+            id
+            text
+          }
+        }
+      `}
+    >
+      {(addNote, { data }) => (
+        <input
+          type="text"
+          placeholder="Add note..."
+          onKeyUp={(e) => handleKeyPress(e, addNote)}
+        />
+      )}
+    </Mutation>
+  );
+}
+
 export default function App() {
+  const [selected, setSelected] = useState(null);
   return (
     <>
       <h1>Opti App</h1>
       <TodoAdd />
-      <TodoList />
+      <TodoList setSelected={setSelected} />
+      <TodoNew />
+      {selected && <TodoDetail selected={selected} />}
+      {selected && <NoteAdd selected={selected} />}
     </>
   );
 }
