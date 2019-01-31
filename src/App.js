@@ -145,7 +145,7 @@ function TodoDetail({ selected }) {
     <Query
       query={GET_TODO_QUERY}
       variables={{ todoId: selected }}
-      fetchPolicy={'cache-and-network'}
+      fetchPolicy={'cache-first'}
     >
       {({ loading, error, data, subscribeToMore }) => {
         if (loading) return <p>Loading...</p>;
@@ -259,11 +259,61 @@ function NoteAdd({ selected }) {
   );
 }
 
+function Network() {
+  return (
+    <Query
+      query={gql`
+        query NetworkStatus {
+          networkStatus @client {
+            isConnected
+          }
+        }
+      `}
+    >
+      {({ loading, error, data }) => {
+        if (loading) return <p>Loading...</p>;
+        if (error) return <p>Error! {error.message}</p>;
+        const { networkStatus } = data;
+        return (
+          <>
+            Network status:{' '}
+            {networkStatus.isConnected ? 'Connected' : 'Disconnected'}{' '}
+            <Mutation
+              mutation={gql`
+                mutation UpdateNetworkStatus($isConnected: Boolen) {
+                  updateNetworkStatus(isConnected: $isConnected) @client
+                }
+              `}
+            >
+              {(mutate, { data }) => (
+                <>
+                  <button
+                    onClick={() =>
+                      mutate({
+                        variables: { isConnected: !networkStatus.isConnected }
+                      })
+                    }
+                  >
+                    Toggle
+                  </button>
+                </>
+              )}
+            </Mutation>
+            <br />
+            <br />
+          </>
+        );
+      }}
+    </Query>
+  );
+}
+
 export default function App() {
   const [selected, setSelected] = useState(null);
   return (
     <>
       <h1>Opti App</h1>
+      <Network />
       <TodoAdd />
       <TodoList setSelected={setSelected} />
       <TodoNew />

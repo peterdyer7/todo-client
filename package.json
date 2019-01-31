@@ -9,6 +9,8 @@
     "apollo-link-context": "^1.0.12",
     "apollo-link-error": "^1.1.5",
     "apollo-link-http": "^1.5.9",
+    "apollo-link-retry": "^2.2.8",
+    "apollo-link-state": "^0.4.2",
     "apollo-link-ws": "^1.0.12",
     "apollo-utilities": "^1.1.2",
     "graphql": "^14.1.1",
