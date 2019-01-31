@@ -5,3 +5,5 @@ Very simple Todo App Client. Leverages Apollo Client and React Apollo 2.1. Imple
 Discussed in blog posts:
 
 - https://www.fullsapps.com/2019/01/working-up-to-optimistic-response-in.html
+- https://www.fullsapps.com/2019/01/apollo-subscriptions.html
+- https://www.fullsapps.com/2019/01/apollo-link.html
